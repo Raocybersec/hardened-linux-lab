@@ -5,79 +5,92 @@
 ---
 
 ## Technical Proof of Work: Annotated Implementation Flow
-This flow represents the exact terminal commands, configuration logic, and security measures applied to this Ubuntu environment.
-
+This flow represents the exact terminal commands, configuration logic, and real-world attack simulation results.
 ```bash
 # =================================================================
 # 1. CRYPTOGRAPHIC IDENTITY SETUP (Ed25519 Keys)
 # =================================================================
 # I generated a modern Ed25519 key pair for high-strength encryption.
-ssh-keygen -t ed25519 -C "bastion-host-key"              # Generate the Ed25519 private/public key pair
+ssh-keygen -t ed25519 -C "bastion-host-key"
 # ~/.ssh/id_ed25519 (Private Key) | ~/.ssh/id_ed25519.pub (Public Key)
 
-# Transferring the public key to the server's authorized_keys file:
-ssh-copy-id -i ~/.ssh/id_ed25519.pub [USER]@[LOCAL_IP]   # Securely install the public key on the host
+# Transferring public key to the host:
+ssh-copy-id -i ~/.ssh/id_ed25519.pub [USER]@[LOCAL_IP]
 
 
 # =================================================================
-# 2. SERVICE PROVISIONING (OpenSSH Installation)
-# =================================================================
-sudo apt update                                         # Update local package index
-sudo apt install openssh-server -y                       # Install OpenSSH server
-sudo systemctl enable --now ssh                         # Enable and start SSH service
-
-
-# =================================================================
-# 3. SSH CONFIGURATION HARDENING (The "Rules")
+# 2. SSH CONFIGURATION HARDENING (The "Rules")
 # =================================================================
 # Modified /etc/ssh/sshd_config to enforce the following security policy:
 # -----------------------------------------------------------------
 # PubkeyAuthentication yes        # Enable identity verification via keys
 # PasswordAuthentication no       # Disable vulnerable password logins
 # PermitEmptyPasswords no         # Block accounts with no credentials
-# PermitRootLogin no              # Disable root login to prevent total system takeover
-# MaxAuthTries 3                  # Limit login attempts to 3 to mitigate brute-force
+# PermitRootLogin no              # Disable root login
+# MaxAuthTries 3                  # Limit login attempts to 3
 # -----------------------------------------------------------------
-sudo sshd -t                                            # Test configuration syntax for errors
-sudo systemctl restart ssh                              # Restart service to apply hardening rules
+sudo sshd -t && sudo systemctl restart ssh
 
 
 # =================================================================
-# 4. INTRUSION PREVENTION (Fail2Ban Setup & Policy Tuning)
+# 3. INTRUSION PREVENTION (Fail2Ban Setup & Policy Tuning)
 # =================================================================
-sudo apt install fail2ban -y                            # Install automated IPS
-sudo systemctl enable --now fail2ban                    # Start the monitoring engine
+sudo apt install fail2ban -y
+sudo systemctl enable --now fail2ban
 
-# TUNING: Modified /etc/fail2ban/jail.local to remove self-ignore (ignoreip)
-# This was a critical step to allow testing security policies against the local host.
-sudo systemctl restart fail2ban                         # Apply the testing-friendly policy
-
-
-# =================================================================
-# 5. ATTACK SIMULATION (Verifying the IPS)
-# =================================================================
-# Simulated a brute-force attack to confirm the jail mechanism works.
-ssh [USER]@[LOCAL_IP]                                   # Connection attempt with intentional wrong password
-# (Result: Connection refused after 3 attempts due to MaxAuthTries and Fail2Ban)
-
-sudo fail2ban-client status sshd                        # Confirm the IP was successfully jailed
-# Output: Banned IP list: [ATTACKER_IP]
-
-sudo fail2ban-client set sshd unbanip [ATTACKER_IP]      # Manually release the IP after test success
+# Tuning: Modified /etc/fail2ban/jail.local to remove self-ignore (ignoreip)
+sudo systemctl restart fail2ban
 
 
 # =================================================================
-# 6. NETWORK PERIMETER LOCKDOWN (UFW Firewall)
+# 4. ATTACK SIMULATION & LOG VERIFICATION (The Proof)
 # =================================================================
-sudo ufw default deny incoming                          # Block all unsolicited incoming traffic
-sudo ufw default allow outgoing                         # Allow server to fetch updates
-sudo ufw allow 22/tcp                                   # Open Port 22 specifically for SSH
-sudo ufw --force enable                                 # Activate firewall and apply rules
+# Simulated a brute-force attack from a separate terminal session.
+ssh [USER]@[LOCAL_IP]  # Intentional wrong password entry
+
+# VERIFYING THE JAIL (Live Output):
+sudo fail2ban-client status sshd
+
+# --- TERMINAL OUTPUT START ---
+# Status for the jail: sshd
+# |- Filter
+# |  |- Currently failed: 1
+# |  |- Total failed:     3
+# |  `- File list:        /var/log/auth.log
+# `- Actions
+#    |- Currently banned: 1
+#    |- Total banned:     1
+#    `- Banned IP list:   127.0.0.1  <-- SUCCESS: Attack IP Jailed
+# --- TERMINAL OUTPUT END ---
+
+# Recovery:
+sudo fail2ban-client set sshd unbanip 127.0.0.1
 
 
 # =================================================================
-# 7. FINAL SYSTEM AUDIT
+# 5. NETWORK PERIMETER LOCKDOWN (UFW Firewall)
 # =================================================================
-sudo ufw status verbose                                 # Verify the "Default Deny" network posture
-sudo fail2ban-client status sshd | grep "Currently"     # Check live jail status
-systemctl is-enabled ssh fail2ban                       # Confirm security persists across reboots
+sudo ufw default deny incoming          # RULE: Block EVERYTHING by default.
+sudo ufw default allow outgoing         # RULE: Allow the server to initiate connections.
+sudo ufw allow 22/tcp                   # RULE: Open a single "hole" for SSH traffic only.
+sudo ufw --force enable                 # ACTION: Activate the security policy.
+
+
+# =================================================================
+# 6. CHALLENGES & TROUBLESHOOTING (Lessons Learned)
+# =================================================================
+# CHALLENGE 1: SSH SERVICE NOT FOUND
+# Problem: initial connection refused. 
+# Fix: Realized OpenSSH isn't always pre-installed; ran 'sudo apt install openssh-server'.
+
+# CHALLENGE 2: FAIL2BAN "IGNOREIP" ISSUE
+# Problem: Fail2Ban wouldn't ban my local test IP.
+# Fix: Edited /etc/fail2ban/jail.local to remove 127.0.0.1 from ignoreip list.
+
+# CHALLENGE 3: RECOVERING FROM SELF-JAIL
+# Problem: Successfully banned myself and lost access.
+# Fix: Used 'fail2ban-client set sshd unbanip' to restore administrative access.
+
+# CHALLENGE 4: FIREWALL TRUST ISSUES
+# Problem: UFW blocked my current session upon enablement.
+# Fix: Explicitly allowed Port 22 BEFORE enabling the firewall to prevent lockout.
