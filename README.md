@@ -1,4 +1,3 @@
-cat << 'EOF' > README.md
 # Hardened Linux Bastion Host & Intrusion Prevention Lab
 **Author:** Rao Tariq Jameel
 **Role:** Computer Science Graduate | Aspiring Cloud Security Engineer
